@@ -7,8 +7,6 @@ import (
 	"log"
 	"net/http"
 
-	// "github.com/MaxRubel/WebsocketsGo/db"
-	// "github.com/MaxRubel/WebsocketsGo/models"
 	"github.com/gorilla/websocket"
 )
 
