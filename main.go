@@ -22,9 +22,21 @@ type MouseMessage struct {
 	Player uint8
 }
 
+type ChoosePlayerMessage struct {
+	PlayerChoice uint8
+}
+
+type playerHasBeenChosen struct {
+	MessageType uint8
+	PlayerNo    uint8
+}
+
 type GameData struct {
-	Player1Score int
-	PLayer2Score int
+	Player1Score  int
+	Player2Score  int
+	Player1       bool
+	Player2       bool
+	GameIsRunning bool
 }
 
 type MousePositions struct {
@@ -43,18 +55,39 @@ var upgrader = websocket.Upgrader{
 var gameData GameData
 var mousePos MousePositions
 var posF string
+var choosePlayerMessage ChoosePlayerMessage
+
+func choosePlayer(no uint8) playerHasBeenChosen {
+	var m playerHasBeenChosen
+	if no == 1 {
+		if !gameData.Player1 {
+			gameData.Player1 = true
+			m.MessageType, m.PlayerNo = 2, 1
+		}
+	}
+
+	if no == 2 {
+		if !gameData.Player2 {
+			gameData.Player2 = true
+			m.MessageType, m.PlayerNo = 2, 2
+
+		}
+	}
+	return m
+}
 
 func whoScored(m MouseMessage) {
 	fmt.Println("this player scored:", m.Player)
-
 	switch m.Player {
 	case 1:
 		gameData.Player1Score++
 	case 2:
-		gameData.PLayer2Score++
+		gameData.Player2Score++
 	default:
 		fmt.Println("Unable to process mouse click")
 	}
+	fmt.Println("player1:", gameData.Player1Score)
+	fmt.Println("player2:", gameData.Player2Score)
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +125,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				mousePos.P2x = int(message.X)
 				mousePos.P2y = int(message.Y)
 			}
-
 		case 1:
 			var mouseMessage MouseMessage
 			err = binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &mouseMessage)
@@ -100,11 +132,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Error decoding mouse message:", err)
 				continue
 			}
+
 			whoScored(mouseMessage)
-			fmt.Println("player 2 score: ", gameData.PLayer2Score)
 
 			il := strconv.Itoa(gameData.Player1Score)
-			i2 := strconv.Itoa(gameData.PLayer2Score)
+			i2 := strconv.Itoa(gameData.Player2Score)
 			is := "n" + "/" + il + "/" + i2
 
 			err = conn.WriteMessage(websocket.TextMessage, []byte(is))
@@ -113,10 +145,22 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+		case 2:
+			err = binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &choosePlayerMessage)
+			if err != nil {
+				fmt.Println("Error decoding mouse message:", err)
+				continue
+			}
+			p := choosePlayer(choosePlayerMessage.PlayerChoice)
+			pF := fmt.Sprintf("%d%d", p.MessageType, p.PlayerNo)
+			if p.MessageType == 2 {
+				err = conn.WriteMessage(websocket.TextMessage, []byte(pF))
+			}
+
 		default:
 			fmt.Println("Unknown message type:", messageType)
 		}
-		ticker := time.NewTicker(100 * time.Millisecond)
+		ticker := time.NewTicker(1 * time.Millisecond)
 		defer ticker.Stop()
 		select {
 		case <-ticker.C:
