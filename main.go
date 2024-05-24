@@ -56,7 +56,6 @@ var gameData GameData
 var mousePos MousePositions
 var posF string
 var choosePlayerMessage ChoosePlayerMessage
-var trackingMouse bool
 
 func choosePlayer(no uint8) playerHasBeenChosen {
 	var m playerHasBeenChosen
