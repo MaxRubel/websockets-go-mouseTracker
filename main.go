@@ -56,6 +56,7 @@ var gameData GameData
 var mousePos MousePositions
 var posF string
 var choosePlayerMessage ChoosePlayerMessage
+var number int
 
 func choosePlayer(no uint8) playerHasBeenChosen {
 	var m playerHasBeenChosen
@@ -77,20 +78,22 @@ func choosePlayer(no uint8) playerHasBeenChosen {
 }
 
 func whoScored(m MouseMessage) {
-	fmt.Println("this player scored:", m.Player)
+	number++
+	fmt.Println("clicked!", number)
 	switch m.Player {
 	case 1:
 		gameData.Player1Score++
 	case 2:
 		gameData.Player2Score++
 	default:
-		fmt.Println("Unable to process mouse click")
+		log.Fatal("Unable to process mouse click")
 	}
-	fmt.Println("player1:", gameData.Player1Score)
-	fmt.Println("player2:", gameData.Player2Score)
+	// fmt.Println("player1:", gameData.Player1Score)
+	// fmt.Println("player2:", gameData.Player2Score)
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
+	mousePosUpdates := make(chan Message)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Println("Upgrade error:", err)
@@ -98,6 +101,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer conn.Close()
+
+	go func() {
+		for update := range mousePosUpdates {
+			if update.Player == 1 {
+				mousePos.P1x = int(update.X)
+				mousePos.P1y = int(update.Y)
+			} else if update.Player == 2 {
+				mousePos.P2x = int(update.X)
+				mousePos.P2y = int(update.Y)
+			}
+		}
+	}()
 
 	for {
 		_, incoming, err := conn.ReadMessage()
@@ -108,24 +123,18 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		messageType := incoming[0]
 
-		switch messageType {
-		case 0:
+		if messageType == 0 {
 			var message Message
 			err = binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &message)
 			if err != nil {
 				fmt.Println("Error decoding mouse message:", err)
-				continue
-			}
+			} else {
+				mousePosUpdates <- message
 
-			if message.Player == 1 {
-				mousePos.P1x = int(message.X)
-				mousePos.P2y = int(message.Y)
 			}
-			if message.Player == 2 {
-				mousePos.P2x = int(message.X)
-				mousePos.P2y = int(message.Y)
-			}
-		case 1:
+		}
+
+		if messageType == 1 {
 			var mouseMessage MouseMessage
 			err = binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &mouseMessage)
 			if err != nil {
@@ -144,8 +153,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				log.Println("Write:", err)
 				return
 			}
+		}
 
-		case 2:
+		if messageType == 2 {
 			err = binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &choosePlayerMessage)
 			if err != nil {
 				fmt.Println("Error decoding mouse message:", err)
@@ -156,11 +166,9 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 			if p.MessageType == 2 {
 				err = conn.WriteMessage(websocket.TextMessage, []byte(pF))
 			}
-
-		default:
-			fmt.Println("Unknown message type:", messageType)
 		}
-		ticker := time.NewTicker(1 * time.Millisecond)
+
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 		select {
 		case <-ticker.C:
