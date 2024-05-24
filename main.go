@@ -76,7 +76,7 @@ func choosePlayer(no uint8) playerHasBeenChosen {
 	return m
 }
 
-func whoScored(m MouseMessage) {
+func mouseClicked(m MouseMessage) {
 	fmt.Println("this player scored:", m.Player)
 	switch m.Player {
 	case 1:
@@ -125,6 +125,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				mousePos.P2x = int(message.X)
 				mousePos.P2y = int(message.Y)
 			}
+
 		case 1:
 			var mouseMessage MouseMessage
 			err = binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &mouseMessage)
@@ -133,7 +134,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			whoScored(mouseMessage)
+			mouseClicked(mouseMessage)
 
 			il := strconv.Itoa(gameData.Player1Score)
 			i2 := strconv.Itoa(gameData.Player2Score)
@@ -160,7 +161,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		default:
 			fmt.Println("Unknown message type:", messageType)
 		}
-		ticker := time.NewTicker(1 * time.Millisecond)
+		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 		select {
 		case <-ticker.C:
