@@ -101,7 +101,6 @@ func choosePlayer(no uint8) playerHasBeenChosen {
 
 func handleMouseClicked(incoming []byte) {
 	var m MouseMessage
-	fmt.Println("this player scored:", m.Player)
 
 	err := binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &m)
 	if err != nil {
