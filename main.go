@@ -5,8 +5,10 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -56,6 +58,27 @@ var gameData GameData
 var mousePos MousePositions
 var posF string
 var choosePlayerMessage ChoosePlayerMessage
+var connectedClients sync.Map
+
+func broadcastMessage(message string) {
+	connectedClients.Range(func(client, _ interface{}) bool {
+		conn := client.(*websocket.Conn)
+		err := conn.WriteMessage(websocket.TextMessage, []byte(message))
+		if err != nil {
+			log.Println("Error sending message:", err)
+			conn.Close()
+			connectedClients.Delete(conn)
+		}
+		return true
+	})
+}
+
+func makeNewCircle() {
+	x := rand.Intn(1280)
+	y := rand.Intn(720)
+	cf := fmt.Sprintf("c/%d/%d", x, y)
+	broadcastMessage(cf)
+}
 
 func choosePlayer(no uint8) playerHasBeenChosen {
 	var m playerHasBeenChosen
@@ -76,7 +99,7 @@ func choosePlayer(no uint8) playerHasBeenChosen {
 	return m
 }
 
-func handleMouseClicked(incoming []byte, conn *websocket.Conn) {
+func handleMouseClicked(incoming []byte) {
 	var m MouseMessage
 	fmt.Println("this player scored:", m.Player)
 
@@ -99,13 +122,15 @@ func handleMouseClicked(incoming []byte, conn *websocket.Conn) {
 	i2 := strconv.Itoa(gameData.Player2Score)
 	is := "n" + "/" + il + "/" + i2
 
-	err = conn.WriteMessage(websocket.TextMessage, []byte(is))
+	broadcastMessage(is)
+	makeNewCircle()
+
 	if err != nil {
 		log.Println("Write:", err)
 		return
 	}
-	fmt.Println("player1:", gameData.Player1Score)
-	fmt.Println("player2:", gameData.Player2Score)
+	// fmt.Println("player1:", gameData.Player1Score)
+	// fmt.Println("player2:", gameData.Player2Score)
 }
 
 func handleMousePos(incoming []byte) {
@@ -125,7 +150,7 @@ func handleMousePos(incoming []byte) {
 	}
 }
 
-func handleChoosePlayer(incoming []byte, conn *websocket.Conn) {
+func handleChoosePlayer(incoming []byte) {
 	err := binary.Read(bytes.NewReader(incoming[1:]), binary.LittleEndian, &choosePlayerMessage)
 	if err != nil {
 		fmt.Println("Error decoding mouse message:", err)
@@ -133,11 +158,10 @@ func handleChoosePlayer(incoming []byte, conn *websocket.Conn) {
 	p := choosePlayer(choosePlayerMessage.PlayerChoice)
 	pF := fmt.Sprintf("%d%d", p.MessageType, p.PlayerNo)
 	if p.MessageType == 2 {
-		err = conn.WriteMessage(websocket.TextMessage, []byte(pF))
-		if err != nil {
-			fmt.Println("Error writing choose player msg")
-			return
-		}
+		broadcastMessage(pF)
+	}
+	if gameData.Player1 && gameData.Player2 {
+		broadcastMessage("Both chosen")
 	}
 }
 
@@ -148,10 +172,13 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	defer conn.Close()
+
+
+	connectedClients.Store(conn, true)
 
 	for {
 		_, incoming, err := conn.ReadMessage()
+
 		if err != nil {
 			log.Println(err)
 			break
@@ -161,11 +188,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		switch messageType {
 		case 0:
-			go handleMousePos(incoming)
+			handleMousePos(incoming)
 		case 1:
-			go handleMouseClicked(incoming, conn)
+			handleMouseClicked(incoming)
 		case 2:
-			go handleChoosePlayer(incoming, conn)
+			handleChoosePlayer(incoming)
 
 		default:
 			fmt.Println("Unknown message type:", messageType)
@@ -177,8 +204,12 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ticker.C:
 			posF = fmt.Sprintf("m/%d/%d/%d/%d", mousePos.P1x, mousePos.P1y, mousePos.P2x, mousePos.P2y)
-			conn.WriteMessage(websocket.TextMessage, []byte(posF))
+			broadcastMessage(posF)
 		}
+		defer func() {
+			conn.Close()
+			connectedClients.Delete(conn)
+		}()
 	}
 }
 
